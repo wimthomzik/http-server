@@ -3,12 +3,26 @@ import socket, json
 HOST = "127.0.0.1"
 PORT = 8000
 
+def _json_body(content):
+    return json.dumps(content).encode('utf-8') + b"\n"
+
 status_text = {
     200: "OK",
     400: "Bad Request",
     404: "Not Found",
     405: "Method Not Allowed",
     500: "Internal Server Error",
+}
+
+def index():
+    return 200, "application/json", _json_body({"path": "/", "method": "GET"})
+
+def hello():
+    return 200, "application/json", _json_body({"path": "/hello", "method": "GET"})
+
+ROUTES = {
+    "/": {"GET":index},
+    "/hello": {"GET": hello},
 }
 
 
@@ -35,7 +49,7 @@ def parse_head(head):
         name, _, value = line.partition(':')
         headers[name.lower().strip()] = value.strip()
         
-    return method, path, query, headers, version
+    return {'method': method, 'path':path, 'query': query,'headers': headers, 'version': version}
 
 def send_response(conn, status, contet_type, body):
     """Write one HTTP response. `body` is bytes."""
@@ -47,6 +61,16 @@ def send_response(conn, status, contet_type, body):
         f"\r\n"
     ).encode('ascii')
     conn.sendall(head + body)
+    
+    
+def dispatch(request): # -> status, content_type, body
+    if request["path"] not in ROUTES:
+        return 404, "application/json", _json_body({"error_message": "Ressource Not Found"})
+    
+    if request["method"] not in ROUTES[request["path"]]:
+        return 405, "application/json", _json_body({"error_message": "Method Not Allowed"})
+    
+    return ROUTES[request["path"]][request["method"]]()
 
 def main():
     
@@ -67,19 +91,17 @@ def main():
             conn.close()
             continue
         
-        method, path, query, headers, version = parse_head(head)
+        request = parse_head(head)
         
-        print(f"\n=== {method} {path} ===")
-        print(f"query:  {query or '(none)'}")
-        print(f"host:   {headers.get('host')}")
-        print(f"agent:  {headers.get('user-agent')}")
-        print(f"headers parsed: {len(headers)}")
+        print(f"\n=== {request['method']} {request['path']} ===")
+        print(f"query:  {request['query'] or '(none)'}")
+        print(f"host:   {request['headers'].get('host')}")
+        print(f"agent:  {request['headers'].get('user-agent')}")
+        print(f"headers parsed: {len(request['headers'])}")
         
-        body = json.dumps(
-            {'method': method, 'path': path, 'query': query}
-        ).encode('utf-8') + b"\n"
+        status, content_type, body = dispatch(request)
         
-        send_response(conn, 200, 'application/json', body)
+        send_response(conn, status, content_type, body)
         conn.close()
         
         
