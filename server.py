@@ -1,4 +1,5 @@
 import socket, json
+import traceback
 
 HOST = "127.0.0.1"
 PORT = 8000
@@ -63,7 +64,7 @@ def send_response(conn, status, contet_type, body):
     conn.sendall(head + body)
     
     
-def dispatch(request): # -> status, content_type, body
+def dispatch(request):
     if request["path"] not in ROUTES:
         return 404, "application/json", _json_body({"error_message": "Ressource Not Found"})
     
@@ -72,40 +73,49 @@ def dispatch(request): # -> status, content_type, body
     
     return ROUTES[request["path"]][request["method"]]()
 
-def main():
+def handle(conn):
+    head, rest = read_head(conn) 
+    if head is None:
+        print("Client Disconnected")
+        return
     
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     
-    s.bind((HOST, PORT))   
-    s.listen()
-    
-    print(f"Listening on http://{HOST}:{PORT}") 
-    
-    while True:
-        
-        conn, addr = s.accept()
-        print(f"Connection from {addr[0]}:{addr[1]}")
-
-        head, rest = read_head(conn)    
-        if head is None:
-            conn.close()
-            continue
-        
+    try:
         request = parse_head(head)
-        
-        print(f"\n=== {request['method']} {request['path']} ===")
-        print(f"query:  {request['query'] or '(none)'}")
-        print(f"host:   {request['headers'].get('host')}")
-        print(f"agent:  {request['headers'].get('user-agent')}")
-        print(f"headers parsed: {len(request['headers'])}")
-        
-        status, content_type, body = dispatch(request)
-        
-        send_response(conn, status, content_type, body)
-        conn.close()
-        
-        
+    except ValueError:
+        send_response(conn, 400, "application/json", _json_body({"error_message": "Bad Request"}))
+        return
     
+    try:
+        status, content_type, body = dispatch(request)
+        send_response(conn, status, content_type, body)
+    except Exception:
+        traceback.print_exc()
+        send_response(conn, 500, "application/json", _json_body({"error_message": "Internal Server Error"}))
+        return
+
+def serve():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     
+        s.bind((HOST, PORT))   
+        s.listen()
+        
+        while True:
+            conn, _ = s.accept()
+            
+            try:
+                handle(conn)
+            except (ConnectionResetError, ConnectionError):
+                print("Client closed the connection unexpectedly")
+            except Exception:
+                traceback.print_exc()
+            finally:
+                conn.close()
+        
+def main():
+    try:
+        serve()
+    except KeyboardInterrupt:
+            print("Shutting down server...")
 
 if __name__ == "__main__":
     main()
