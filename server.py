@@ -1,8 +1,7 @@
 import socket, json
 import traceback
 
-HOST = "127.0.0.1"
-PORT = 8000
+HOST, PORT = "127.0.0.1", 8000
 
 def _json_body(content):
     return json.dumps(content).encode('utf-8') + b"\n"
@@ -25,7 +24,6 @@ ROUTES = {
     "/": {"GET":index},
     "/hello": {"GET": hello},
 }
-
 
 def read_head(conn):
     """Read from conn until the blank line. Returns (head, leftover) bytes."""
@@ -52,11 +50,22 @@ def parse_head(head):
         
     return {'method': method, 'path':path, 'query': query,'headers': headers, 'version': version}
 
-def send_response(conn, status, contet_type, body):
+def _get_status(status):
+    text = ""
+    if not isinstance(status, int) or status not in range(100, 600):
+        status = 500
+    
+    if status in status_text:
+        text = status_text[status]
+        
+    return status, text
+
+def send_response(conn, status, content_type, body):
     """Write one HTTP response. `body` is bytes."""
+    status, text = _get_status(status)
     head = (
-        f"HTTP/1.1 {status} {status_text[status]}\r\n"
-        f"Content-Type: {contet_type}\r\n"
+        f"HTTP/1.1 {status} {text}\r\n"
+        f"Content-Type: {content_type}\r\n"
         f"Content-Length: {len(body)}\r\n"
         f"Connection: close\r\n"
         f"\r\n"
