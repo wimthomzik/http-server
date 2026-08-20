@@ -1,7 +1,34 @@
-import socket, json
-import traceback
+import socket, json, traceback, os
+from dataclasses import dataclass
 
-HOST, PORT = "127.0.0.1", 8000
+READ_BUFF_SIZE = 4096
+
+@dataclass(frozen=True)
+class ServerConfig:
+
+    host: str = "127.0.0.1"
+    port: int = 8000
+    
+    def __post_init__(self):
+        if not isinstance(self.host, str) or not self.host:
+            raise ValueError(f"host must be a non-empty string, got {self.host}")
+        if type(self.port) is not int:
+                    raise ValueError(f"port must be an int, got {self.port}")
+        if not 0 <= self.port <= 65535:
+            raise ValueError(f"port must be between 0 and 65535, got {self.port}")
+
+    @classmethod
+    def from_env(cls, env=os.environ):
+        overrides = {}
+        if 'HTTP_SERVER_HOST' in env:
+            overrides['host'] = env['HTTP_SERVER_HOST']
+        if 'HTTP_SERVER_PORT' in env:
+            raw = env['HTTP_SERVER_PORT']
+            try:
+                overrides['port'] = int(raw)
+            except ValueError:
+                raise ValueError(f"HTTP_SERVER_PORT must be an integer, got {raw}") from None
+        return cls(**overrides)
 
 def _json_body(content):
     return json.dumps(content).encode('utf-8') + b"\n"
@@ -29,7 +56,7 @@ def read_head(conn):
     """Read from conn until the blank line. Returns (head, leftover) bytes."""
     buf = b''
     while b'\r\n\r\n' not in buf:
-        chunk = conn.recv(4096)
+        chunk = conn.recv(READ_BUFF_SIZE)
         if not chunk:
             return None, b''
         buf += chunk
@@ -102,10 +129,10 @@ def handle(conn):
         send_response(conn, 500, "application/json", _json_body({"error_message": "Internal Server Error"}))
         return
 
-def serve():
+def serve(config):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)     
-        s.bind((HOST, PORT))   
+        s.bind((config.host, config.port))   
         s.listen()
         
         while True:
@@ -121,8 +148,9 @@ def serve():
                 conn.close()
         
 def main():
+    config = ServerConfig.from_env()
     try:
-        serve()
+        serve(config)
     except KeyboardInterrupt:
             print("Shutting down server...")
 
