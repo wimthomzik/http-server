@@ -30,6 +30,13 @@ class ServerConfig:
                 raise ValueError(f"HTTP_SERVER_PORT must be an integer, got {raw}") from None
         return cls(**overrides)
 
+    def to_env(self):
+        """Inverse of from_env: the environment a fresh process needs to rebuild this config."""
+        return {
+            'HTTP_SERVER_HOST': self.host,
+            'HTTP_SERVER_PORT': str(self.port),
+        }
+
 def _json_body(content):
     return json.dumps(content).encode('utf-8') + b"\n"
 
