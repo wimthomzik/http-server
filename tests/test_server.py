@@ -1,7 +1,7 @@
 import re, socket, time
 import pytest
 
-from server import send_response
+from server import ServerConfig, send_response
 
 def _read_head(s) -> bytes:
     r = b""
@@ -12,9 +12,8 @@ def _read_head(s) -> bytes:
         r += chunk
     return r
 
-def send_request(server, raw: bytes):
-    host, port = server
-    with socket.create_connection((host, port), timeout=2) as s:
+def send_request(config, raw: bytes):
+    with socket.create_connection((config.host, config.port), timeout=2) as s:
         s.sendall(raw)
         return _read_head(s)
     
@@ -38,12 +37,23 @@ def test_malformed_request_line(server):
     assert status_line(r) == b"HTTP/1.1 400 Bad Request"
     
 def test_request_sent_in_two_fragments(server):
-    host, port = server
-    with socket.create_connection((host, port), timeout=2) as s:
+    with socket.create_connection((server.host, server.port), timeout=2) as s:
         s.sendall(b"GET / HTTP")
         time.sleep(0.1)
         s.sendall(b"/1.1\r\n\r\n")
         r = _read_head(s)
+        assert status_line(r) == b"HTTP/1.1 200 OK"
+
+def test_config_survives_a_round_trip_through_the_environment():
+    config = ServerConfig(host="127.0.0.1", port=9999)
+    assert ServerConfig.from_env(config.to_env()) == config
+
+def test_two_instances_run_side_by_side(server_factory):
+    """The payoff of a configurable server: two of them, no source edits."""
+    a, b = server_factory(), server_factory()
+    assert a.port != b.port
+    for config in (a, b):
+        r = send_request(config, b"GET / HTTP/1.1\r\n\r\n")
         assert status_line(r) == b"HTTP/1.1 200 OK"
 
 class _FakeConn:
