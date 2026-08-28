@@ -12,7 +12,7 @@ class ParseError(Exception):
 class AccessRecord:
     method: str
     path: str
-    status: int
+    status: int | str
     duration: float
     raw_line: str
     lineno: int
@@ -22,7 +22,7 @@ def _parse_json(line):
         value = json.loads(line)
     except ValueError:
         return None
-    value if isinstance(value, dict) else None
+    return value if isinstance(value, dict) else None
     
 def _text(field, value, raw, lineno):
     if not value or not isinstance(value, str):
